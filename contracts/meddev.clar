@@ -34,6 +34,9 @@
 ;; Contract owner
 (define-data-var contract-owner principal tx-sender)
 
+;; Current timestamp counter
+(define-data-var timestamp-counter uint u0)
+
 ;; Device tracking map
 (define-map device-details 
   {device-id: uint} 
@@ -58,6 +61,14 @@
 (define-map regulatory-bodies
   {authority: principal, cert-type: uint}
   {approved: bool}
+)
+
+;; Get current timestamp and increment counter
+(define-private (get-current-timestamp)
+  (begin
+    (var-set timestamp-counter (+ (var-get timestamp-counter) u1))
+    (var-get timestamp-counter)
+  )
 )
 
 ;; Only contract owner can perform certain actions
@@ -110,7 +121,7 @@
       {
         owner: tx-sender,
         current-status: initial-status,
-        history: (list {status: initial-status, timestamp: stacks-block-height})
+        history: (list {status: initial-status, timestamp: (get-current-timestamp)})
       }
     )
     (ok true)
@@ -140,7 +151,7 @@
           current-status: new-status,
           history: (unwrap-panic 
             (as-max-len? 
-              (append (get history device) {status: new-status, timestamp: stacks-block-height}) 
+              (append (get history device) {status: new-status, timestamp: (get-current-timestamp)}) 
               u10
             )
           )
@@ -190,7 +201,7 @@
         {device-id: validated-device-id, cert-type: validated-cert-type}
         {
           issuer: tx-sender,
-          timestamp: stacks-block-height,
+          timestamp: (get-current-timestamp),
           valid: true
         }
       )
