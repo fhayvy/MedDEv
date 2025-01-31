@@ -90,3 +90,157 @@
   (and (> device-id u0) (<= device-id u1000000))
 )
 
+;; Check if sender is approved regulatory body
+(define-private (is-regulatory-body (authority principal) (cert-type uint))
+  (default-to 
+    false
+    (get approved (map-get? regulatory-bodies {authority: authority, cert-type: cert-type}))
+  )
+)
+
+;; Register a new device
+(define-public (register-device (device-id uint) (initial-status uint))
+  (begin
+    (asserts! (is-valid-device-id device-id) ERR_INVALID_DEVICE)
+    (asserts! (is-valid-status initial-status) ERR_INVALID_STATUS)
+    (asserts! (or (is-contract-owner tx-sender) (is-eq initial-status DEVICE_STATUS_MANUFACTURED)) ERR_UNAUTHORIZED)
+    
+    (map-set device-details 
+      {device-id: device-id}
+      {
+        owner: tx-sender,
+        current-status: initial-status,
+        history: (list {status: initial-status, timestamp: stacks-block-height})
+      }
+    )
+    (ok true)
+  )
+)
+
+;; Update device status
+(define-public (update-device-status (device-id uint) (new-status uint))
+  (let 
+    (
+      (device (unwrap! (map-get? device-details {device-id: device-id}) ERR_INVALID_DEVICE))
+    )
+    (asserts! (is-valid-device-id device-id) ERR_INVALID_DEVICE)
+    (asserts! (is-valid-status new-status) ERR_INVALID_STATUS)
+    (asserts! 
+      (or 
+        (is-contract-owner tx-sender)
+        (is-eq (get owner device) tx-sender)
+      ) 
+      ERR_UNAUTHORIZED
+    )
+    
+    (map-set device-details 
+      {device-id: device-id}
+      (merge device 
+        {
+          current-status: new-status,
+          history: (unwrap-panic 
+            (as-max-len? 
+              (append (get history device) {status: new-status, timestamp: stacks-block-height}) 
+              u10
+            )
+          )
+        }
+      )
+    )
+    (ok true)
+  )
+)
+
+;; Add regulatory body
+(define-public (add-regulatory-body (authority principal) (cert-type uint))
+  (begin
+    (asserts! (is-contract-owner tx-sender) ERR_UNAUTHORIZED)
+    (asserts! (is-valid-certification-type cert-type) ERR_INVALID_CERTIFICATION)
+    
+    (let
+      ((validated-authority authority)
+       (validated-cert-type cert-type))
+      (map-set regulatory-bodies
+        {authority: validated-authority, cert-type: validated-cert-type}
+        {approved: true}
+      )
+      (ok true)
+    )
+  )
+)
+
+;; Add certification to device
+(define-public (add-certification (device-id uint) (cert-type uint))
+  (begin
+    (asserts! (is-valid-device-id device-id) ERR_INVALID_DEVICE)
+    (asserts! (is-valid-certification-type cert-type) ERR_INVALID_CERTIFICATION)
+    (asserts! (is-regulatory-body tx-sender cert-type) ERR_UNAUTHORIZED)
+    
+    (asserts! 
+      (is-none 
+        (map-get? device-certifications {device-id: device-id, cert-type: cert-type})
+      )
+      ERR_CERTIFICATION_EXISTS
+    )
+    
+    (let
+      ((validated-device-id device-id)
+       (validated-cert-type cert-type))
+      (map-set device-certifications
+        {device-id: validated-device-id, cert-type: validated-cert-type}
+        {
+          issuer: tx-sender,
+          timestamp: stacks-block-height,
+          valid: true
+        }
+      )
+      (ok true)
+    )
+  )
+)
+
+;; Verify device certification
+(define-read-only (verify-certification (device-id uint) (cert-type uint))
+  (let
+    (
+      (certification (unwrap! 
+        (map-get? device-certifications {device-id: device-id, cert-type: cert-type})
+        ERR_INVALID_CERTIFICATION
+      ))
+    )
+    (ok (get valid certification))
+  )
+)
+
+;; Revoke certification
+(define-public (revoke-certification (device-id uint) (cert-type uint))
+  (begin
+    (asserts! (is-valid-device-id device-id) ERR_INVALID_DEVICE)
+    (asserts! (is-valid-certification-type cert-type) ERR_INVALID_CERTIFICATION)
+    
+    (let
+      (
+        (certification (unwrap! 
+          (map-get? device-certifications {device-id: device-id, cert-type: cert-type})
+          ERR_INVALID_CERTIFICATION
+        ))
+        (validated-device-id device-id)
+        (validated-cert-type cert-type)
+      )
+      (asserts! 
+        (or
+          (is-contract-owner tx-sender)
+          (is-eq (get issuer certification) tx-sender)
+        )
+        ERR_UNAUTHORIZED
+      )
+      
+      (map-set device-certifications
+        {device-id: validated-device-id, cert-type: validated-cert-type}
+        (merge certification {valid: false})
+      )
+      (ok true)
+    )
+  )
+)
+
