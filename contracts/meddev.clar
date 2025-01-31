@@ -162,21 +162,28 @@
   )
 )
 
-;; Add regulatory body
+;; Validate authority principal
+(define-private (is-valid-authority (authority principal))
+  (and 
+    (not (is-eq authority (var-get contract-owner)))  ;; Authority can't be contract owner
+    (not (is-eq authority tx-sender))                 ;; Authority can't be the sender
+    (not (is-eq authority 'SP000000000000000000002Q6VF78))  ;; Not zero address
+  )
+)
+
+;; Add regulatory body with additional validation
 (define-public (add-regulatory-body (authority principal) (cert-type uint))
   (begin
     (asserts! (is-contract-owner tx-sender) ERR_UNAUTHORIZED)
     (asserts! (is-valid-certification-type cert-type) ERR_INVALID_CERTIFICATION)
+    (asserts! (is-valid-authority authority) ERR_UNAUTHORIZED)
     
-    (let
-      ((validated-authority authority)
-       (validated-cert-type cert-type))
-      (map-set regulatory-bodies
-        {authority: validated-authority, cert-type: validated-cert-type}
-        {approved: true}
-      )
-      (ok true)
+    ;; After validation, we can safely use the authority
+    (map-set regulatory-bodies
+      {authority: authority, cert-type: cert-type}
+      {approved: true}
     )
+    (ok true)
   )
 )
 
