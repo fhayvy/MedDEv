@@ -244,3 +244,27 @@
   )
 )
 
+;; Get device history
+(define-read-only (get-device-history (device-id uint))
+  (let 
+    (
+      (device (unwrap! (map-get? device-details {device-id: device-id}) ERR_INVALID_DEVICE))
+    )
+    (ok (get history device))
+  )
+)
+
+;; Get current device status
+(define-read-only (get-device-status (device-id uint))
+  (let 
+    (
+      (device (unwrap! (map-get? device-details {device-id: device-id}) ERR_INVALID_DEVICE))
+    )
+    (ok (get current-status device))
+  )
+)
+
+;; Get certification details
+(define-read-only (get-certification-details (device-id uint) (cert-type uint))
+  (ok (map-get? device-certifications {device-id: device-id, cert-type: cert-type}))
+)
